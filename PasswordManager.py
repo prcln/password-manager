@@ -1,7 +1,8 @@
-﻿import tkinter as tk
+import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk
 import os
-import sys  # Import the sys module
+import sys
+import webbrowser
 from cryptography.fernet import Fernet
 
 PASSWORD_FILE = "passwords.txt"
@@ -19,15 +20,15 @@ def generate_key():
 def load_key():
     return open(KEY_FILE, 'rb').read()
 
-# Function to encrypt a password
-def encrypt_password(password, key):
+# Function to encrypt a text
+def encrypt_text(text, key):
     f = Fernet(key)
-    return f.encrypt(password.encode()).decode()
+    return f.encrypt(text.encode()).decode()
 
-# Function to decrypt a password
-def decrypt_password(encrypted_password, key):
+# Function to decrypt a text
+def decrypt_text(encrypted_text, key):
     f = Fernet(key)
-    return f.decrypt(encrypted_password.encode()).decode()
+    return f.decrypt(encrypted_text.encode()).decode()
 
 # Function to set up a master password
 def setup_master_password():
@@ -35,7 +36,7 @@ def setup_master_password():
     if master_password:
         # Encrypt the master password before saving
         key = load_key() if os.path.exists(KEY_FILE) else generate_key()
-        encrypted_master_password = encrypt_password(master_password, key)
+        encrypted_master_password = encrypt_text(master_password, key)
         with open(MASTER_PASSWORD_FILE, 'w') as f:
             f.write(encrypted_master_password)
         messagebox.showinfo("Success", "Master password set successfully!")
@@ -50,7 +51,7 @@ def verify_master_password():
         master_password = simpledialog.askstring("Authentication", "Enter master password:", show='*')
         try:
             # Decrypt the master password for verification
-            if master_password == decrypt_password(encrypted_master_password, key):
+            if master_password == decrypt_text(encrypted_master_password, key):
                 return True
             else:
                 messagebox.showerror("Error", "Invalid master password!")
@@ -67,9 +68,10 @@ def add():
     password = entryPassword.get()
     if username and password:
         key = load_key()
-        encrypted_password = encrypt_password(password, key)
+        encrypted_username = encrypt_text(username, key)
+        encrypted_password = encrypt_text(password, key)
         with open(PASSWORD_FILE, 'a') as f:
-            f.write(f"{username} {encrypted_password}\n")
+            f.write(f"{encrypted_username} {encrypted_password}\n")
         messagebox.showinfo("Success", "Password added!")
     else:
         messagebox.showerror("Error", "Please enter both fields")
@@ -81,16 +83,18 @@ def get():
     try:
         with open(PASSWORD_FILE, 'r') as f:
             for line in f:
-                user, enc_password = line.split(' ')
-                passwords[user] = enc_password.strip()
+                enc_username, enc_password = line.split(' ')
+                passwords[enc_username] = enc_password.strip()
     except FileNotFoundError:
         messagebox.showerror("Error", "Password file not found!")
 
-    if username in passwords:
+    if passwords:
         key = load_key()
-        decrypted_password = decrypt_password(passwords[username], key)
-        messagebox.showinfo("Password", f"Password for {username} is {decrypted_password}")
-    else:
+        for enc_username, enc_password in passwords.items():
+            if username == decrypt_text(enc_username, key):
+                decrypted_password = decrypt_text(enc_password, key)
+                messagebox.showinfo("Password", f"Password for {username} is {decrypted_password}")
+                return
         messagebox.showinfo("Password", "No such username exists!")
 
 # Function to list all passwords in a Treeview
@@ -99,8 +103,8 @@ def getlist():
     try:
         with open(PASSWORD_FILE, 'r') as f:
             for line in f:
-                user, enc_password = line.split(' ')
-                passwords[user] = enc_password.strip()
+                enc_username, enc_password = line.split(' ')
+                passwords[enc_username] = enc_password.strip()
     except FileNotFoundError:
         messagebox.showerror("Error", "Password file not found!")
 
@@ -115,9 +119,10 @@ def getlist():
         tree.heading("Username", text="Username")
         tree.heading("Password", text="Password")
 
-        for user, enc_password in passwords.items():
-            decrypted_password = decrypt_password(enc_password, key)
-            tree.insert("", tk.END, values=(user, decrypted_password))
+        for enc_username, enc_password in passwords.items():
+            decrypted_username = decrypt_text(enc_username, key)
+            decrypted_password = decrypt_text(enc_password, key)
+            tree.insert("", tk.END, values=(decrypted_username, decrypted_password))
 
         tree.pack(fill=tk.BOTH, expand=True)
 
@@ -132,9 +137,9 @@ def delete():
     try:
         with open(PASSWORD_FILE, 'r') as f:
             for line in f:
-                user, enc_password = line.split(' ')
-                if user != username:
-                    temp_passwords.append(f"{user} {enc_password.strip()}")
+                enc_username, enc_password = line.split(' ')
+                if username != decrypt_text(enc_username, load_key()):
+                    temp_passwords.append(f"{enc_username} {enc_password.strip()}")
         with open(PASSWORD_FILE, 'w') as f:
             for line in temp_passwords:
                 f.write(line + '\n')
@@ -166,10 +171,20 @@ def restart_app():
     app.destroy()  # Destroy the current instance of the app
     os.execl(sys.executable, sys.executable, *sys.argv)  # Restart the application
 
+# Function to open the feedback URL
+def open_feedback():
+    webbrowser.open("https://github.com/prcln")
+
+# Function to change the color theme of the application
+def change_color_theme(color):
+    style.configure("TFrame", background=color)
+    style.configure("TLabel", background=color)
+    style.configure("TButton", background=color)
+
 # Main application code
 app = tk.Tk()
-app.geometry("560x320")
-app.title("Password Manager")
+app.geometry("700x500")
+app.title("Your TrustWorthy Password Manager")
 
 if not os.path.exists(KEY_FILE):
     key = generate_key()  # Generate a key on first run
@@ -177,36 +192,84 @@ if not os.path.exists(KEY_FILE):
 if not verify_master_password():
     setup_master_password()  # Automatically prompt for a new master password if none exists
 
+style = ttk.Style()
+
+# Creating frames for better organization
+frame_inputs = ttk.Frame(app, padding="10")
+frame_inputs.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+
+frame_buttons = ttk.Frame(app, padding="10")
+frame_buttons.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+
+frame_reset = ttk.Frame(app, padding="10")
+frame_reset.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+
+frame_feedback = ttk.Frame(app, padding="10")
+frame_feedback.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+
 # Username block
-labelName = tk.Label(app, text="USERNAME:")
-labelName.grid(row=0, column=0, padx=15, pady=15)
-entryName = tk.Entry(app)
-entryName.grid(row=0, column=1, padx=15, pady=15)
+labelName = ttk.Label(frame_inputs, text="Username:")
+labelName.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+entryName = ttk.Entry(frame_inputs)
+entryName.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
 # Password block
-labelPassword = tk.Label(app, text="PASSWORD:")
-labelPassword.grid(row=1, column=0, padx=10, pady=5)
-entryPassword = tk.Entry(app, show='*')  # Hide password input
-entryPassword.grid(row=1, column=1, padx=10, pady=5)
+labelPassword = ttk.Label(frame_inputs, text="Password:")
+labelPassword.grid(row=1, column=0, padx=5, pady=5, sticky="e")
+entryPassword = ttk.Entry(frame_inputs, show='*')  # Hide password input
+entryPassword.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
 # Add button
-buttonAdd = tk.Button(app, text="Add", command=add)
-buttonAdd.grid(row=2, column=0, padx=15, pady=8, sticky="we")
+buttonAdd = ttk.Button(frame_buttons, text="Add", command=add)
+buttonAdd.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
 # Get button
-buttonGet = tk.Button(app, text="Get", command=get)
-buttonGet.grid(row=2, column=1, padx=15, pady=8, sticky="we")
+buttonGet = ttk.Button(frame_buttons, text="Get", command=get)
+buttonGet.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
 # List Button
-buttonList = tk.Button(app, text="List", command=getlist)
-buttonList.grid(row=3, column=0, padx=15, pady=8, sticky="we")
+buttonList = ttk.Button(frame_buttons, text="List", command=getlist)
+buttonList.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
 # Delete button
-buttonDelete = tk.Button(app, text="Delete", command=delete)
-buttonDelete.grid(row=3, column=1, padx=15, pady=8, sticky="we")
+buttonDelete = ttk.Button(frame_buttons, text="Delete", command=delete)
+buttonDelete.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
 
 # Reset button
-buttonReset = tk.Button(app, text="Reset", command=reset_app)
-buttonReset.grid(row=4, column=0, padx=15, pady=8, columnspan=2, sticky="we")
+buttonReset = ttk.Button(frame_reset, text="Reset", command=reset_app)
+buttonReset.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+# Feedback button
+buttonFeedback = ttk.Button(frame_feedback, text="Feedback", command=open_feedback)
+buttonFeedback.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+# Color theme selection
+color_options = ["Light Blue", "Light Green", "Light Yellow", "Light Grey", "Jar", "Pink", "White"]
+selected_color = tk.StringVar(value=color_options[0])
+
+def update_color_theme(event):
+    color = selected_color.get()
+    color_map = {
+        "Light Blue": "#ADD8E6",
+        "Light Green": "#90EE90",
+        "Light Yellow": "#FFFFE0",
+        "Light Grey": "#D3D3D3",
+        "Jar": "#000000",
+        "Pink": "#FFC0CB",
+        "White": "#FFFFFF",
+    }
+    change_color_theme(color_map[color])
+
+labelColor = ttk.Label(frame_inputs, text="Color Theme:")
+labelColor.grid(row=2, column=0, padx=5, pady=5, sticky="e")
+color_menu = ttk.Combobox(frame_inputs, textvariable=selected_color, values=color_options)
+color_menu.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+color_menu.bind("<<ComboboxSelected>>", update_color_theme)
+
+# Adjust the column configurations to make them responsive
+frame_inputs.columnconfigure(1, weight=1)
+frame_buttons.columnconfigure((0, 1, 2, 3), weight=1)
+frame_reset.columnconfigure(0, weight=1)
+frame_feedback.columnconfigure(0, weight=1)
 
 app.mainloop()
